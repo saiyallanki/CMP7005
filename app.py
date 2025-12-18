@@ -54,7 +54,7 @@ def load_data():
 
 @st.cache_resource
 def load_model():
-    return joblib.load("aqi_pipeline.pkl.pkl")
+    return joblib.load("aqi_random_forest_model.pkl")
 
 df = load_data()
 model = load_model()
