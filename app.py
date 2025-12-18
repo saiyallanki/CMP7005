@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
+import pickle
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -54,7 +54,8 @@ def load_data():
 
 @st.cache_resource
 def load_model():
-    return joblib.load("aqi_random_forest_model.pkl")
+    with open("aqi_random_forest_model.pkl", "rb") as f:
+        return pickle.load(f)
 
 df = load_data()
 model = load_model()
@@ -570,52 +571,59 @@ elif section == "Model Evaluation & Features":
     st.pyplot(fig)
 
 # ==================================================
-# 6️⃣ AQI PREDICTION
+# 6️⃣ AQI PREDICTION (FIXED & DEPLOYMENT SAFE)
 # ==================================================
 elif section == "AQI Prediction":
     st.title("🤖 AQI Prediction")
 
+    col1, col2 = st.columns(2)
     input_data = {}
 
-    col1, col2 = st.columns(2)
-
+    # ----------- RAW POLLUTANT INPUTS -----------
     with col1:
         for col in [
             'PM2.5','PM10','NO','NO2','NOx','NH3',
             'CO','SO2','O3','Benzene','Toluene','Xylene'
         ]:
-            input_data[col] = st.number_input(col, min_value=0.0, value=10.0)
+            input_data[col] = st.number_input(
+                col, min_value=0.0, value=10.0
+            )
 
+    # ----------- METADATA INPUTS -----------
     with col2:
-        city_selected = st.selectbox("City", sorted(df["City"].unique()))
+        city_selected = st.selectbox(
+            "City", sorted(df["City"].unique())
+        )
         date_selected = st.date_input("Date")
 
+    # ----------- PREDICT -----------
     if st.button("Predict AQI"):
-        # ---------- SAFE DATE CONVERSION ----------
+
         date_selected = pd.to_datetime(date_selected)
 
-        # ---------- ENCODE FEATURES ----------
-        input_data["City_le"] = int(
-            df["City"].astype("category").cat.categories.get_loc(city_selected)
-        )
-        input_data["year"] = int(date_selected.year)
-        input_data["month"] = int(date_selected.month)
-        input_data["day"] = int(date_selected.day)
-        input_data["dayofweek"] = int(date_selected.dayofweek)
-        input_data["is_weekend"] = int(date_selected.dayofweek >= 5)
+        # ----------- CREATE RAW FEATURE ROW -----------
+        input_row = {
+            **input_data,
+            "City": city_selected,
+            "Date": date_selected
+        }
 
-        input_df = pd.DataFrame([input_data])
+        input_df = pd.DataFrame([input_row])
 
-        # ---------- FORCE NUMERIC TYPES ----------
-        input_df = input_df.apply(pd.to_numeric, errors="coerce")
+        # ----------- DERIVE DATE FEATURES (SAME AS TRAINING) -----------
+        input_df["year"] = input_df["Date"].dt.year
+        input_df["month"] = input_df["Date"].dt.month
+        input_df["day"] = input_df["Date"].dt.day
+        input_df["dayofweek"] = input_df["Date"].dt.dayofweek
+        input_df["is_weekend"] = (input_df["dayofweek"] >= 5).astype(int)
 
-        # ---------- ENGINEERED FEATURES ----------
+        # ----------- SAFE DEFAULTS FOR LAG / ROLLING FEATURES -----------
         input_df["PM2.5_roll7"] = input_df["PM2.5"]
         input_df["PM2.5_roll30"] = input_df["PM2.5"]
         input_df["PM10_roll7"] = input_df["PM10"]
         input_df["PM10_roll30"] = input_df["PM10"]
         input_df["PM2.5_lag1"] = input_df["PM2.5"]
-        input_df["AQI_lag1"] = float(df["AQI"].mean())
+        input_df["AQI_lag1"] = df["AQI"].mean()
 
         input_df["PM_ratio"] = input_df["PM2.5"] / (input_df["PM10"] + 1e-6)
         input_df["NO2_to_NOx"] = input_df["NO2"] / (input_df["NOx"] + 1e-6)
@@ -625,8 +633,12 @@ elif section == "AQI Prediction":
             input_df["Xylene"]
         )
 
-        # ---------- FINAL CAST ----------
-        input_df = input_df.astype(float)
+        # ----------- DROP UNUSED COLUMNS -----------
+        input_df = input_df.drop(columns=["Date"])
 
+        # ----------- PREDICTION (PIPELINE HANDLES EVERYTHING) -----------
         prediction = model.predict(input_df)[0]
+
         st.success(f"✅ Predicted AQI: **{prediction:.2f}**")
+
+
