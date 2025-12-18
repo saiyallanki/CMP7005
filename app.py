@@ -572,35 +572,44 @@ elif section == "Model Evaluation & Features":
 # ==================================================
 # 6️⃣ AQI PREDICTION
 # ==================================================
-elif section == "AQI Prediction":
-    st.title("🤖 AQI Prediction")
+if st.button("Predict AQI"):
+    date = pd.to_datetime(date)
 
-    col1, col2 = st.columns(2)
-    input_data = {}
+    input_data["City_le"] = int(
+        df["City"].astype("category").cat.categories.get_loc(city)
+    )
+    input_data["year"] = int(date.year)
+    input_data["month"] = int(date.month)
+    input_data["day"] = int(date.day)
+    input_data["dayofweek"] = int(date.dayofweek)
+    input_data["is_weekend"] = int(date.dayofweek >= 5)
 
-    with col1:
-        for col in [
-            'PM2.5','PM10','NO','NO2','NOx','NH3',
-            'CO','SO2','O3','Benzene','Toluene','Xylene'
-        ]:
-            input_data[col] = st.number_input(col, min_value=0.0, value=10.0)
+    input_df = pd.DataFrame([input_data])
 
-    with col2:
-        city = st.selectbox("City", sorted(df["City"].unique()))
-        date = st.date_input("Date")
+    # -------- FORCE NUMERIC TYPES (CRITICAL FIX) --------
+    numeric_cols = input_df.columns
+    input_df[numeric_cols] = input_df[numeric_cols].apply(
+        pd.to_numeric, errors="coerce"
+    )
 
-    if st.button("Predict AQI"):
-        date = pd.to_datetime(date)
+    # -------- ADD ENGINEERED FEATURES --------
+    input_df["PM2.5_roll7"] = input_df["PM2.5"]
+    input_df["PM2.5_roll30"] = input_df["PM2.5"]
+    input_df["PM10_roll7"] = input_df["PM10"]
+    input_df["PM10_roll30"] = input_df["PM10"]
+    input_df["PM2.5_lag1"] = input_df["PM2.5"]
+    input_df["AQI_lag1"] = float(df["AQI"].mean())
 
-        input_data["City_le"] = df["City"].astype("category").cat.categories.get_loc(city)
-        input_data["year"] = date.year
-        input_data["month"] = date.month
-        input_data["day"] = date.day
-        input_data["dayofweek"] = date.dayofweek
-        input_data["is_weekend"] = int(date.dayofweek >= 5)
+    input_df["PM_ratio"] = input_df["PM2.5"] / (input_df["PM10"] + 1e-6)
+    input_df["NO2_to_NOx"] = input_df["NO2"] / (input_df["NOx"] + 1e-6)
+    input_df["VOC_sum"] = (
+        input_df["Benzene"] +
+        input_df["Toluene"] +
+        input_df["Xylene"]
+    )
 
-        input_df = pd.DataFrame([input_data])
-        prediction = model.predict(input_df)[0]
+    # -------- FINAL SAFETY CAST --------
+    input_df = input_df.astype(float)
 
-        st.success(f"✅ Predicted AQI: **{prediction:.2f}**")
-
+    prediction = model.predict(input_df)[0]
+    st.success(f"✅ Predicted AQI: **{prediction:.2f}**")
