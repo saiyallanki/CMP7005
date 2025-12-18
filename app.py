@@ -54,7 +54,7 @@ def load_data():
 
 @st.cache_resource
 def load_model():
-    return joblib.load("aqi_random_forest_model.pkl")
+    return joblib.load("aqi_pipeline.pkl.pkl")
 
 df = load_data()
 model = load_model()
@@ -603,3 +603,4 @@ elif section == "AQI Prediction":
         prediction = model.predict(input_df)[0]
 
         st.success(f"✅ Predicted AQI: **{prediction:.2f}**")
+
